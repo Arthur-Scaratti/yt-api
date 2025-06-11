@@ -1,0 +1,36 @@
+# Go build outputs
+/bin/
+/build/
+/dist/
+*.exe
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+/downloads/
+/unused/
+# GoLand / VSCode / IDEs
+.idea/
+.vscode/
+*.swp
+
+# Logs e temporários
+*.log
+*.tmp
+*.bak
+
+# Arquivos de configuração pessoais
+.env
+.env.*
+*.local
+
+# Docker
+docker-compose.override.yml
+
+# Git
+*.orig
+
+# Sistema operacional
+.DS_Store
+Thumbs.db

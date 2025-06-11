@@ -15,25 +15,11 @@ Uma API REST moderna para download de vídeos do YouTube com suporte a conversã
 - **Download Engine**: yt-dlp
 - **Compressão**: Archive/zip nativo
 
-### Principais Decisões Arquiteturais
-
 ### 1. **WebSockets vs Polling**
 
 - ✅ **Escolhido**: WebSockets para atualizações em tempo real
-- ❌ **Rejeitado**: Polling via endpoints `/status`
 - **Razão**: Reduz latência, melhora UX, diminui carga no servidor
 
-### 2. **Cache de Status com Redis**
-
-- Persiste o estado dos downloads entre reinicializações
-- Evita reprocessamento desnecessário
-- Permite múltiplas conexões para o mesmo download
-
-### 3. **ID Único Baseado em Hash**
-
-- Combinação de URL + formato gera SHA1
-- Evita downloads duplicados
-- Facilita cache e organização de arquivos
 
 ## 🚀 Instalação e Configuração
 
@@ -64,23 +50,8 @@ cd yt-downloader
 # Instalar dependências Go
 go mod tidy
 
-# Instalar dependência WebSocket
-go get github.com/gorilla/websocket
-
 # Executar
 go run main.go
-```
-
-### Variáveis de Ambiente
-
-```sh
-# Redis (opcional - padrões localhost:6379)
-REDIS_HOST=localhost
-REDIS_PORT=6379
-REDIS_PASSWORD=
-
-# Servidor
-PORT=8080
 ```
 
 ## 📡 API Endpoints
@@ -214,7 +185,8 @@ yt-downloader/
 │   ├── redis.go            # Configuração e operações Redis
 │   ├── cleanup.go          # Sistema de limpeza automática
 │   ├── download.go         # Processamento de downloads
-│   └── websocket.go        # Utilitários WebSocket
+│   ├── status.go           # Gerenciamento de status
+│   └── websocket.go        # Utilitários WebSocket    
 ├── downloads/              # Diretório de arquivos temporários
 └── go.mod                  # Dependências Go
 ```
@@ -254,18 +226,13 @@ yt-downloader/
 var upgrader = websocket.Upgrader{
   CheckOrigin: func(r *http.Request) bool {
     origin := r.Header.Get("Origin")
-    return origin == "https://meudominio.com"
+    return origin == "https://seudominio.com=)"
   },
 }
 
-// Rate limiting
-// Implementar middleware de rate limiting
+// middleware de rate limiting
 
-// Autenticação
-// Adicionar sistema de tokens/API keys
-
-// HTTPS obrigatório
-// Configurar TLS em produção
+// Configurar TLS e forçar conexões seguras usando HTTPS
 ```
 
 ## 🚨 Limitações e Cuidados
@@ -275,14 +242,11 @@ var upgrader = websocket.Upgrader{
 - **Dependência externa**: Requer `yt-dlp` instalado
 - **Armazenamento**: Arquivos temporários consomem espaço
 - **CPU intensivo**: Downloads podem sobrecarregar servidor
-- **Rede**: Dependente da velocidade de internet
 
 ### Cuidados Operacionais
 
-- **YouTube Terms**: Respeitar termos de uso do YouTube
 - **Copyright**: Baixar apenas conteúdo autorizado
 - **Recursos**: Monitorar uso de CPU, memória e disco
-- **Logs**: Logs podem conter URLs sensíveis
 
 ### Monitoramento Recomendado
 
@@ -302,18 +266,12 @@ redis-cli info memory
 
 ### Funcionalidades Futuras
 
-- **Playlist support**: Download de playlists completas
 - **Formatos adicionais**: FLAC, OGG, diferentes qualidades
 - **Metadata**: Extração e edição de metadados
-- **Preview**: Thumbnail e informações antes do download
-- **Agendamento**: Downloads programados
 - **API de progresso**: Porcentagem detalhada de progresso
 
 ### Melhorias Técnicas
 
-- **Database**: PostgreSQL para histórico detalhado
-- **Queue system**: RabbitMQ para processamento assíncrono
-- **Microservices**: Separar download engine
 - **Container**: Docker para deploy facilitado
 - **CDN**: Cache de arquivos populares
 - **Analytics**: Dashboard de uso e performance
@@ -332,10 +290,6 @@ func UploadToS3(filePath, bucket, key string) error {
   // Upload para AWS S3, Google Cloud, etc.
 }
 
-// Email notifications
-func SendCompletionEmail(email, downloadID string) error {
-  // Notificar usuário por email
-}
 ```
 
 ## 🏃‍♂️ Teste Rápido
@@ -348,5 +302,5 @@ go run main.go
 curl http://localhost:8080/health
 
 # Testar WebSocket (usando wscat)
-# wscat -c ws://localhost:8080/download?url=...&format=mp3
+wscat -c ws://localhost:8080/download?url=...&format=mp3
 ```

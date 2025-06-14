@@ -62,7 +62,7 @@ func MonitorStatusAndNotify(ws *websocket.Conn, id, initialStatus string, ctx *g
                     
                     msg := CreateWebSocketMessages(status, id)
                     if status == "processing" && lastKnownStatus == "processing" {
-                        msg.Message = "" // Evita mensagem repetitiva
+                        msg.Message = ""
                     }
 
                     if err := ws.WriteJSON(msg); err != nil {

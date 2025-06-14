@@ -29,7 +29,7 @@ func GetDownloadStatus(id string) StatusInfo {
             info.ShouldStartProcessing = false
         case "processing":
             info.ShouldStartProcessing = false
-        default: // "error" ou outros estados
+        default:
             log.Printf("Status no Redis para ID %s é '%s'. Iniciando novo processamento.", id, redisStatus)
             info.ShouldStartProcessing = true
             info.CurrentStatusForClient = "processing"

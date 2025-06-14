@@ -33,9 +33,11 @@ func ProcessDownload(url, format, id string) {
 
 func buildDownloadCommand(url, format, dir string) *exec.Cmd {
     output := "%(title)s.%(ext)s"
-    
-    if format == "mp3" {
-        return exec.Command("yt-dlp", "-x", "--audio-format", "mp3", "-o", output, "-P", dir, url)
+
+ 
+    if format == "mp3" || format == "wav" || format == "aac" || format == "webm" {
+        return exec.Command("yt-dlp", "-x", "--audio-format", format, "-o", output, "-P", dir, url)
     }
-    return exec.Command("yt-dlp", "-o", output, "-P", dir, url)
+
+    return exec.Command("yt-dlp", "--recode-video", format, "-o", output, "-P", dir, url)
 }

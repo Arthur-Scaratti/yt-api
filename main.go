@@ -2,9 +2,9 @@ package main
 
 import (
 	"log"
-	"net/http" // Para o handler de /health
+	"net/http" 
 	"yt-mp3-api/handlers"
-	"yt-mp3-api/utils" // Certifique-se que este caminho está correto para seu nome de módulo
+	"yt-mp3-api/utils" 
 
 	"github.com/gin-gonic/gin"
 )
@@ -14,8 +14,8 @@ func main() {
 
     r := gin.Default()
 
-    r.GET("/download", handlers.DownloadHandler)
-    r.GET("/result", handlers.ResultHandler)   // Para o download do arquivo final
+    r.POST("/download", handlers.DownloadHandler)
+    r.GET("/result", handlers.ResultHandler) 
 
     r.GET("/health", func(c *gin.Context) {
         if err := utils.RedisClient.Ping(utils.Ctx).Err(); err != nil {

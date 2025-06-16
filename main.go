@@ -6,7 +6,7 @@ import (
     "os"
     "os/signal"
     "syscall"
-    "yt-mp3-api/serverlib"
+    "github.com/Arthur-Scaratti/yt-mp3-api/serverlib"
 )
 
 func main() {

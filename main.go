@@ -1,36 +1,39 @@
 package main
 
 import (
-	"log"
-	"net/http" 
-	"yt-mp3-api/handlers"
-	"yt-mp3-api/utils" 
-
-	"github.com/gin-gonic/gin"
+    "context"
+    "log"
+    "os"
+    "os/signal"
+    "syscall"
+    "yt-mp3-api/serverlib"
 )
 
 func main() {
-    utils.InitRedis()
+    config := serverlib.DefaultServerConfig()
+    
+    if port := os.Getenv("PORT"); port != "" {
+        config.Port = ":" + port
+    }
+    
+    if os.Getenv("DEBUG") == "true" {
+        config.Debug = true
+    }
 
-    r := gin.Default()
+    ctx, cancel := context.WithCancel(context.Background())
+    defer cancel()
 
-    r.POST("/download", handlers.DownloadHandler)
-    r.GET("/result", handlers.ResultHandler) 
+    sigChan := make(chan os.Signal, 1)
+    signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
-    r.GET("/health", func(c *gin.Context) {
-        if err := utils.RedisClient.Ping(utils.Ctx).Err(); err != nil {
-            c.JSON(http.StatusServiceUnavailable, gin.H{
-                "status": "error",
-                "reason": "Redis connection failed",
-                "error":  err.Error(),
-            })
-            return
-        }
-        c.JSON(http.StatusOK, gin.H{"status": "ok", "redis": "connected"})
-    })
+    go func() {
+        <-sigChan
+        log.Println("Sinal recebido, iniciando shutdown...")
+        cancel()
+    }()
 
-    log.Println("Servidor iniciando na porta :8080")
-    if err := r.Run(":8080"); err != nil {
+    if err := serverlib.StartServerWithContext(ctx, config); err != nil {
         log.Fatalf("Falha ao iniciar o servidor: %v", err)
     }
+    log.Println("Servidor finalizado")
 }

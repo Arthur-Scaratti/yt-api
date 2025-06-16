@@ -1,4 +1,4 @@
-module yt-mp3-api
+module github.com/Arthur-Scaratti/yt-mp3-api
 
 go 1.22.4
 

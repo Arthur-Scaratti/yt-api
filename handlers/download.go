@@ -9,7 +9,7 @@ import (
     "github.com/gorilla/websocket"
     "github.com/gin-gonic/gin"
     
-    "github.com/Arthur-Scaratti/yt-mp3-api/utils"
+    "github.com/Arthur-Scaratti/yt-api/utils"
 )
 
 func DownloadHandler(c *gin.Context) {

@@ -6,11 +6,11 @@ import (
     "os"
     "os/signal"
     "syscall"
-    "github.com/Arthur-Scaratti/yt-mp3-api/serverlib"
+    ytapi "github.com/Arthur-Scaratti/yt-api"
 )
 
 func main() {
-    config := serverlib.DefaultServerConfig()
+    config := ytapi.DefaultServerConfig()
     
     if port := os.Getenv("PORT"); port != "" {
         config.Port = ":" + port
@@ -32,7 +32,7 @@ func main() {
         cancel()
     }()
 
-    if err := serverlib.StartServerWithContext(ctx, config); err != nil {
+    if err := ytapi.StartServerWithContext(ctx, config); err != nil {
         log.Fatalf("Falha ao iniciar o servidor: %v", err)
     }
     log.Println("Servidor finalizado")

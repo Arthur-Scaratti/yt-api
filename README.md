@@ -1,11 +1,10 @@
-
-# YouTube Downloader API
+# YT API - YouTube Downloader Package
 
 ## 📋 Visão Geral
 
-Uma API REST moderna para download de vídeos do YouTube com suporte a conversão para MP3 e MP4. O projeto utiliza WebSockets para fornecer atualizações de status em tempo real, eliminando a necessidade de polling e melhorando significativamente a experiência do usuário.
+Um package Go para download de vídeos do YouTube com suporte a conversão para MP3 e MP4. O projeto utiliza WebSockets para fornecer atualizações de status em tempo real e pode ser usado tanto como biblioteca importável quanto como servidor standalone.
 
-## 🏗️ Arquitetura e Decisões Técnicas
+## 🏗️ Arquitetura
 
 ### Stack Tecnológica
 
@@ -15,22 +14,27 @@ Uma API REST moderna para download de vídeos do YouTube com suporte a conversã
 - **Download Engine**: yt-dlp
 - **Compressão**: Archive/zip nativo
 
-### 1. **WebSockets vs Polling**
+### Estrutura do Projeto
 
-- ✅ **Escolhido**: WebSockets para atualizações em tempo real
-- **Razão**: Reduz latência, melhora UX, diminui carga no servidor
+```
+├── server.go              # Funções principais exportáveis
+├── cmd/server/main.go     # Exemplo de servidor standalone
+├── handlers/              # Handlers HTTP/WebSocket
+│   ├── download.go        # Handler de download via WebSocket
+│   ├── result.go          # Handler para servir arquivos
+│   └── redishealth.go     # Health check
+└── utils/                 # Utilitários (Redis, WebSocket, etc.)
+```
 
-
-## 🚀 Instalação e Configuração
+## 🚀 Instalação e Uso
 
 ### Pré-requisitos
 
-```sh
+```bash
 # Instalar yt-dlp
 pip install yt-dlp
 
-# Instalar e configurar Redis
-
+# Instalar Redis
 # Ubuntu/Debian:
 sudo apt install redis-server
 
@@ -40,78 +44,189 @@ brew install redis
 # Windows: Download do site oficial
 ```
 
-### Instalação do Projeto
+### Como Package Importável
 
-```sh
+#### 1. Instalação
+
+```bash
+go get github.com/Arthur-Scaratti/yt-api
+```
+
+#### 2. Uso Básico (QuickStart)
+
+```go
+package main
+
+import (
+    "log"
+    ytapi "github.com/Arthur-Scaratti/yt-api"
+)
+
+func main() {
+    // Inicia servidor com configurações padrão
+    if err := ytapi.QuickStart(); err != nil {
+        log.Fatal("Erro ao iniciar servidor:", err)
+    }
+}
+```
+
+#### 3. Uso com Context (Graceful Shutdown)
+
+```go
+package main
+
+import (
+    "context"
+    "log"
+    "os"
+    "os/signal"
+    "syscall"
+    ytapi "github.com/Arthur-Scaratti/yt-api"
+)
+
+func main() {
+    ctx, cancel := context.WithCancel(context.Background())
+    defer cancel()
+
+    // Captura sinais para shutdown graceful
+    sigChan := make(chan os.Signal, 1)
+    signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+
+    go func() {
+        <-sigChan
+        log.Println("Sinal recebido, iniciando shutdown...")
+        cancel()
+    }()
+
+    // Inicia servidor com context
+    if err := ytapi.QuickStartWithContext(ctx); err != nil {
+        log.Printf("Servidor finalizado: %v", err)
+    }
+}
+```
+
+#### 4. Configuração Customizada
+
+```go
+package main
+
+import (
+    "time"
+    ytapi "github.com/Arthur-Scaratti/yt-api"
+)
+
+func main() {
+    // Configuração do servidor
+    serverConfig := &ytapi.ServerConfig{
+        Port:         ":3000",
+        Debug:        true,
+        ReadTimeout:  30 * time.Second,
+        WriteTimeout: 30 * time.Second,
+        IdleTimeout:  60 * time.Second,
+    }
+
+    // Configuração do Redis
+    redisConfig := &ytapi.RedisConfig{
+        Address:  "localhost:6379",
+        Password: "",
+        DB:       0,
+    }
+
+    // Inicia com configurações customizadas
+    if err := ytapi.Start(serverConfig, redisConfig); err != nil {
+        log.Fatal("Erro ao iniciar servidor:", err)
+    }
+}
+```
+
+### Como Servidor Standalone
+
+```bash
 # Clone o repositório
-git clone <repository-url>
-cd yt-downloader
+git clone https://github.com/Arthur-Scaratti/yt-api.git
+cd yt-api
 
-# Instalar dependências Go
+# Instale dependências
 go mod tidy
 
-# Executar
-go run main.go
+# Execute o servidor
+go run cmd/server/main.go
+
+# Ou compile e execute
+go build -o ytapi cmd/server/main.go
+./ytapi
+```
+
+#### Variáveis de Ambiente
+
+```bash
+# Porta do servidor (padrão: 8080)
+export PORT=3000
+
+# Modo debug (padrão: false)
+export DEBUG=true
+
+# Execute o servidor
+go run cmd/server/main.go
 ```
 
 ## 📡 API Endpoints
 
-### 1. WebSocket Download Endpoint
+### 1. `/download` - WebSocket para Download
 
-```http
-GET /download?url=<youtube_url>&format=<mp3|mp4>
-Upgrade: websocket
+**Método**: `GET` (upgrade para WebSocket)
+
+**Parâmetros**:
+- `url`: URL do vídeo do YouTube
+- `format`: `mp3` ou `mp4`
+
+**Exemplo**:
+```
+ws://localhost:8080/download?url=https://youtube.com/watch?v=VIDEO_ID&format=mp3
 ```
 
-**Parâmetros:**
-
-- `url` (required): URL válida do YouTube
-- `format` (required): `mp3` ou `mp4`
-
-**Fluxo WebSocket:**
-
+**Fluxo WebSocket**:
 1. Cliente conecta via WebSocket
-2. Servidor retorna status inicial
-3. Atualizações automáticas durante processamento
-4. Notificação quando concluído
+2. Servidor valida parâmetros e inicia download
+3. Servidor envia atualizações de status em tempo real
+4. Cliente recebe ID do download quando concluído
 
-**Mensagens WebSocket:**
-
+**Mensagens WebSocket**:
 ```json
-// Status inicial/em progresso
 {
-  "status": "processing",
-  "id": "abc123...",
-  "message": "Iniciando processamento."
-}
-
-// Concluído
-{
-  "status": "completed",
-  "id": "abc123...",
-  "message": "Download concluído. Use /result?id=abc123..."
-}
-
-// Erro
-{
-  "status": "error",
-  "id": "abc123...",
-  "message": "Erro durante o processamento."
+  "status": "processing|completed|error",
+  "id": "hash_do_download",
+  "message": "Descrição do status atual"
 }
 ```
 
-### 2. Result Endpoint
+### 2. `/result` - Obter Arquivo Processado
 
-```http
-GET /result?id=<download_id>
+**Método**: `GET`
+
+**Parâmetros**:
+- `id`: ID do download (recebido via WebSocket)
+
+**Exemplo**:
+```
+GET /result?id=abc123def456
 ```
 
-### 3. Health Check
+**Respostas**:
+- **200**: Download do arquivo
+- **202**: Ainda processando
+- **404**: Arquivo não encontrado
 
-```http
+### 3. `/health` - Health Check
+
+**Método**: `GET`
+
+**Exemplo**:
+```
 GET /health
 ```
 
+**Resposta**:
 ```json
 {
   "status": "ok",
@@ -119,28 +234,31 @@ GET /health
 }
 ```
 
-## 💻 Como Usar
+## 🧪 Testando Localmente
 
-### Exemplo com JavaScript (Cliente Web)
+### 1. Teste Rápido com cURL
+
+```bash
+# Health check
+curl http://localhost:8080/health
+
+# Verificar se um download existe
+curl "http://localhost:8080/result?id=exemplo123"
+```
+
+### 2. Teste WebSocket com JavaScript
 
 ```javascript
-const ws = new WebSocket(`ws://localhost:8080/download?url=${encodeURIComponent(youtubeUrl)}&format=mp3`);
+const ws = new WebSocket(`ws://localhost:8080/download?url=${encodeURIComponent('https://youtube.com/watch?v=VIDEO_ID')}&format=mp3`);
 
 ws.onmessage = function(event) {
   const data = JSON.parse(event.data);
-  switch(data.status) {
-    case 'processing':
-      updateUI('Processando...', data.message);
-      break;
-    case 'completed':
-      updateUI('Concluído!', data.message);
-      window.location.href = `/result?id=${data.id}`;
-      ws.close();
-      break;
-    case 'error':
-      updateUI('Erro', data.message);
-      ws.close();
-      break;
+  console.log('Status:', data.status, '-', data.message);
+  
+  if (data.status === 'completed') {
+    // Download do arquivo
+    window.location.href = `/result?id=${data.id}`;
+    ws.close();
   }
 };
 
@@ -149,7 +267,7 @@ ws.onerror = function(error) {
 };
 ```
 
-### Exemplo com Python
+### 3. Teste WebSocket com Python
 
 ```python
 import websocket
@@ -159,148 +277,96 @@ import requests
 def on_message(ws, message):
     data = json.loads(message)
     print(f"Status: {data['status']} - {data.get('message', '')}")
+    
     if data['status'] == 'completed':
+        # Download do arquivo
         response = requests.get(f"http://localhost:8080/result?id={data['id']}")
-        with open(f"download_{data['id']}.mp3", 'wb') as f:
+        filename = f"download_{data['id']}.mp3"
+        with open(filename, 'wb') as f:
             f.write(response.content)
+        print(f"Arquivo salvo como: {filename}")
         ws.close()
 
 def on_error(ws, error):
     print(f"Erro: {error}")
 
-url = "wss://localhost:8080/download?url=https://youtube.com/watch?v=...&format=mp3"
+# Conectar ao WebSocket
+url = "ws://localhost:8080/download?url=https://youtube.com/watch?v=VIDEO_ID&format=mp3"
 ws = websocket.WebSocketApp(url, on_message=on_message, on_error=on_error)
 ws.run_forever()
 ```
 
-## 📁 Estrutura do Projeto
+## 🔧 Funções Exportadas
 
-```
-yt-downloader/
-├── main.go                 # Entrada principal e configuração de rotas
-├── handlers/
-│   ├── download.go         # Handler WebSocket para downloads
-│   └── result.go           # Handler para entrega de arquivos
-├── utils/
-│   ├── redis.go            # Configuração e operações Redis
-│   ├── cleanup.go          # Sistema de limpeza automática
-│   ├── download.go         # Processamento de downloads
-│   ├── status.go           # Gerenciamento de status
-│   └── websocket.go        # Utilitários WebSocket    
-├── downloads/              # Diretório de arquivos temporários
-└── go.mod                  # Dependências Go
-```
-
-## 🔧 Funcionalidades Avançadas
-
-### Sistema de Limpeza Automática
-
-- Remove arquivos antigos automaticamente
-- Configurável por tamanho total (padrão: 2GB)
-- Executado após cada download concluído
-
-### Cache Inteligente
-
-- Evita reprocessamento de URLs já baixadas
-- Compartilha downloads entre múltiplos clientes
-- Persiste entre reinicializações do servidor
-
-### Compressão Automática
-
-- Múltiplos arquivos → ZIP automático
-- Arquivo único → Download direto
-- Nomes de arquivo preservados
-
-## ⚠️ Considerações de Segurança
-
-### Implementadas
-
-- Validação de parâmetros de entrada
-- Sanitização de nomes de arquivos
-- Limpeza automática de arquivos temporários
-
-### Recomendadas para Produção
+### Configurações
 
 ```go
-// CORS restrito
-var upgrader = websocket.Upgrader{
-  CheckOrigin: func(r *http.Request) bool {
-    origin := r.Header.Get("Origin")
-    return origin == "https://seudominio.com=)"
-  },
-}
+// Configurações padrão
+serverConfig := ytapi.DefaultServerConfig()
+redisConfig := ytapi.DefaultRedisConfig()
 
-// middleware de rate limiting
-
-// Configurar TLS e forçar conexões seguras usando HTTPS
+// Informações do servidor
+info := ytapi.GetServerInfo()
 ```
 
-## 🚨 Limitações e Cuidados
-
-### Limitações Técnicas
-
-- **Dependência externa**: Requer `yt-dlp` instalado
-- **Armazenamento**: Arquivos temporários consomem espaço
-- **CPU intensivo**: Downloads podem sobrecarregar servidor
-
-### Cuidados Operacionais
-
-- **Copyright**: Baixar apenas conteúdo autorizado
-- **Recursos**: Monitorar uso de CPU, memória e disco
-
-### Monitoramento Recomendado
-
-```sh
-# Verificar espaço em disco
-df -h downloads/
-
-# Monitorar processos yt-dlp
-ps aux | grep yt-dlp
-
-# Status Redis
-redis-cli ping
-redis-cli info memory
-```
-
-## 🔮 Possibilidades de Expansão
-
-### Funcionalidades Futuras
-
-- **Formatos adicionais**: FLAC, OGG, diferentes qualidades
-- **Metadata**: Extração e edição de metadados
-- **API de progresso**: Porcentagem detalhada de progresso
-
-### Melhorias Técnicas
-
-- **Container**: Docker para deploy facilitado
-- **CDN**: Cache de arquivos populares
-- **Analytics**: Dashboard de uso e performance
-
-### Integrações Possíveis
+### Inicialização
 
 ```go
-// Webhook notifications
-type WebhookConfig struct {
-  URL    string   `json:"url"`
-  Events []string `json:"events"` // completed, error
-}
+// Início rápido
+ytapi.QuickStart()
+ytapi.QuickStartWithContext(ctx)
 
-// Cloud storage
-func UploadToS3(filePath, bucket, key string) error {
-  // Upload para AWS S3, Google Cloud, etc.
-}
+// Início customizado
+ytapi.Start(serverConfig, redisConfig)
+ytapi.StartWithContext(ctx, serverConfig, redisConfig)
 
+// Apenas inicializar (sem iniciar servidor)
+engine := ytapi.InitializeServer(serverConfig, redisConfig)
 ```
 
-## 🏃‍♂️ Teste Rápido
+## 🔄 Fluxo de Funcionamento
 
-```sh
-# Iniciar servidor
-go run main.go
+1. **Conexão WebSocket**: Cliente conecta em `/download` com parâmetros
+2. **Validação**: Servidor valida URL e formato
+3. **ID Geração**: Hash SHA1 da URL + formato
+4. **Status Check**: Verifica se download já existe no Redis
+5. **Processamento**: Inicia download com `yt-dlp` se necessário
+6. **Atualizações**: Envia status via WebSocket em tempo real
+7. **Conclusão**: Cliente recebe ID para buscar arquivo em `/result`
 
-# Em outro terminal, testar health
-curl http://localhost:8080/health
+## 📁 Estrutura de Dados
 
-# Testar WebSocket (usando wscat)
-wscat -c ws://localhost:8080/download?url=...&format=mp3
+### ServerConfig
+```go
+type ServerConfig struct {
+    Port         string        // Porta do servidor (ex: ":8080")
+    Debug        bool          // Modo debug
+    ReadTimeout  time.Duration // Timeout de leitura
+    WriteTimeout time.Duration // Timeout de escrita
+    IdleTimeout  time.Duration // Timeout de idle
+}
 ```
+
+### RedisConfig
+```go
+type RedisConfig struct {
+    Address  string // Endereço do Redis (ex: "localhost:6379")
+    Password string // Senha do Redis
+    DB       int    // Número do banco Redis
+}
+```
+
+## 🚨 Requisitos do Sistema
+
+- **Go**: 1.22.4 ou superior
+- **Redis**: Qualquer versão recente
+- **yt-dlp**: Instalado e acessível via PATH
+- **Espaço em disco**: Para armazenamento temporário dos downloads
+
+## 📝 Notas Importantes
+
+- Os arquivos são armazenados temporariamente em `downloads/`
+- Cada download é identificado por um hash SHA1 único
+- O sistema suporta múltiplos downloads simultâneos
+- WebSockets mantêm conexão ativa durante todo o processo
+- Arquivos múltiplos são automaticamente compactados em ZIP

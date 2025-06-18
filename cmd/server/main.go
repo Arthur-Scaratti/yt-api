@@ -32,8 +32,6 @@ func main() {
         cancel()
     }()
 
-    if err := ytapi.StartServerWithContext(ctx, config); err != nil {
-        log.Fatalf("Falha ao iniciar o servidor: %v", err)
-    }
+    ytapi.QuickStartWithContext(ctx)
     log.Println("Servidor finalizado")
 }

@@ -9,7 +9,29 @@ import (
     ytapi "github.com/Arthur-Scaratti/yt-api"
 )
 
+func createDownloadsDir() error {
+    downloadDir := "downloads"
+    
+    // Verifica se a pasta já existe
+    if _, err := os.Stat(downloadDir); os.IsNotExist(err) {
+        // Cria a pasta com permissões 0755 (rwxr-xr-x)
+        if err := os.Mkdir(downloadDir, 0755); err != nil {
+            return err
+        }
+        log.Println("Pasta 'downloads' criada com sucesso")
+    } else {
+        log.Println("Pasta 'downloads' já existe")
+    }
+    
+    return nil
+}
+
 func main() {
+    
+    if err := createDownloadsDir(); err != nil {
+        log.Fatal("Erro ao criar pasta downloads:", err)
+    }
+
     config := ytapi.DefaultServerConfig()
     
     if port := os.Getenv("PORT"); port != "" {

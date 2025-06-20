@@ -1,13 +1,37 @@
+version: '3.8'
 
 services:
+  api:
+    build: .
+    container_name: youtube-downloader-api
+    ports:
+      - "8080:8080" 
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD= 
+      - GIN_MODE=release  
+    volumes:
+      - ./downloads:/app/downloads 
+    networks:
+      - internal-network
+    depends_on:
+      - redis
+
   redis:
-    image: redis:9
-    container_name: redis_cache
+    image: redis:8-alpine
+    container_name: youtube-downloader-redis
     ports:
       - "6379:6379"
     volumes:
       - redis-data:/data
-    command: ["redis-server", "--appendonly", "yes"]
+    command: redis-server --appendonly yes
+    networks:
+      - internal-network
+
+networks:
+  internal-network:
+    driver: bridge
 
 volumes:
   redis-data:

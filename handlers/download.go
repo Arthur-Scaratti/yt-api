@@ -1,97 +1,187 @@
 package handlers
 
 import (
-    "crypto/sha1"
-    "encoding/hex"
-    "log"
+    "crypto/sha256"
+    "fmt"
     "net/http"
-
-    "github.com/gorilla/websocket"
-    "github.com/gin-gonic/gin"
-    
+    "os"
+    "os/exec"
+    "path/filepath"
+    "strconv"
+    "strings"
     "github.com/Arthur-Scaratti/yt-api/utils"
+    "github.com/Arthur-Scaratti/yt-api/config"
+    "github.com/gin-gonic/gin"
 )
 
-func DownloadHandler(c *gin.Context) {
-    url := c.Query("url")
-    format := c.Query("format")
+var cfg *config.Config
 
-    if !isValidRequest(url, format) {
-        c.JSON(http.StatusBadRequest, gin.H{
-            "error":   "Parâmetros inválidos",
-            "message": "Use 'url' e 'format' (mp3 ou mp4). Ex: /download?url=...&format=mp3",
+func init() {
+    cfg = config.Load()
+}
+
+func createDownloadDir() error {
+    if _, err := os.Stat(cfg.DownloadDir); os.IsNotExist(err) {
+        return os.MkdirAll(cfg.DownloadDir, cfg.FilePermissions)
+    }
+    return nil
+}
+
+func DownloadHandler(c *gin.Context) {
+    createDownloadDir()
+
+    videoURL := c.Query("url")
+    format := c.DefaultQuery("format", cfg.DefaultFormat)
+    quality := c.DefaultQuery("quality", fmt.Sprintf(cfg.DefaultQuality, "p"))
+    playlist := c.DefaultQuery("playlist", cfg.DefaultPlaylist)
+    index := c.DefaultQuery("index", cfg.DefaultIndex)
+
+    
+    if videoURL == "" {
+        c.JSON(http.StatusBadRequest, gin.H{"error": "Missing URL"})
+        return
+    }
+    
+    isPlaylist := strings.ToLower(playlist) == "true"
+    isIndexSet := index != ""
+
+    hasher := sha256.New()
+    inputString := fmt.Sprintf("%s|%s|%s|%s|%s", videoURL, format, quality, playlist, index)
+    hasher.Write([]byte(inputString))
+    id := fmt.Sprintf("dl_%x", hasher.Sum(nil))
+
+	    // VERIFICAÇÃO SE ID JÁ EXISTE
+		if utils.CheckExistingID(id) {
+			// ID já existe, retornar arquivo/informações
+			if isPlaylist && !isIndexSet {
+				// Playlist completa - retornar lista organizada
+				fileList, err := utils.GetPlaylistFiles(id)
+				if err != nil {
+					c.JSON(http.StatusInternalServerError, gin.H{"error": "Erro ao ler arquivos da playlist"})
+					return
+				}
+				
+				c.JSON(http.StatusOK, gin.H{
+					"status":   "Ready",
+					"id":       id,
+					"count":    len(fileList),
+					"files":    fileList,
+					"download": fmt.Sprintf("%s?id=%s&index=N", cfg.PlaylistHandler,id),
+				})
+				return
+			} else {
+				// Download único ou item específico da playlist - retornar arquivo
+				filePath, err := utils.GetSingleFile(id)
+				if err != nil {
+					c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+					return
+				}
+				
+				fileName := filepath.Base(filePath)
+				safeName := utils.SanitizeFilename(fileName)
+				c.FileAttachment(filePath, safeName)
+				return
+			}
+		}
+
+	dir := filepath.Join(cfg.DownloadDir, id)
+    os.MkdirAll(dir, os.ModePerm)
+
+    ///////////////Retorna imediatamente e roda em background///////////////
+    if isPlaylist && !isIndexSet {
+        progressURL := fmt.Sprintf("%s?id=%s", cfg.WebSocketHandler,id)
+        c.JSON(http.StatusAccepted, gin.H{
+            "id":          id,
+            "progressUrl": progressURL,
+        })
+        go RunPlaylistDownload(videoURL, format, quality, id, dir)
+        return
+    }
+
+////////////// Execução normal (index ou não-playlist)////////////////////////////////////
+    outputname := cfg.OutputTemplateSingle
+
+    cmdArgs := []string{
+        "--concurrent-fragments", strconv.Itoa(cfg.ConcurrentFragments),
+        "--fragment-retries", strconv.Itoa(cfg.FragmentRetries),
+        "--retries", strconv.Itoa(cfg.Retries),
+        "--extractor-retries", strconv.Itoa(cfg.ExtractorRetries),
+        "-o", outputname,
+        "-P", dir,
+    }
+
+    formatSelector := BuildFormatSelector(format, quality)
+    cmdArgs = append(cmdArgs, "-f", formatSelector)
+
+    switch format {
+case "mp3":
+        cmdArgs = append(cmdArgs, "--extract-audio", "--audio-format", format)
+    case "mp4", "mkv", "webm":
+        cmdArgs = append(cmdArgs, "--merge-output-format", format)
+    }
+
+    if isPlaylist {
+        if isIndexSet {
+            cmdArgs = append(cmdArgs, "--playlist-items", index)
+        }
+    } else {
+        cmdArgs = append(cmdArgs, "--no-playlist")
+    }
+
+    cmdArgs = append(cmdArgs, videoURL)
+
+    cmd := exec.Command("yt-dlp", cmdArgs...)
+    output, err := cmd.CombinedOutput()
+    if err != nil {
+        c.JSON(http.StatusInternalServerError, gin.H{"error": "Download failed", "details": string(output)})
+        return
+    }
+
+    files, _ := os.ReadDir(dir)
+    if isPlaylist && !isIndexSet {
+        var names []string
+        for _, f := range files {
+            names = append(names, f.Name())
+        }
+        c.JSON(http.StatusOK, gin.H{
+            "id":       id,
+            "count":    len(names),
+            "files":    names,
+            "download": fmt.Sprintf("/result?id=%s&index=N", id),
         })
         return
     }
-
-    ws, err := utils.Upgrader.Upgrade(c.Writer, c.Request, nil)
-    if err != nil {
-        log.Printf("Falha ao atualizar para websocket: %v", err)
-        return
-    }
-    defer ws.Close()
-
-    id := generateDownloadID(url, format)
-    log.Printf("Requisição de download recebida para ID %s (URL: %s, Formato: %s)", id, url, format)
-
-    statusInfo := utils.GetDownloadStatus(id)
     
-    if err := handleInitialStatus(ws, id, statusInfo); err != nil {
+    for _, f := range files {
+        safeName := utils.SanitizeFilename(f.Name())
+        c.FileAttachment(filepath.Join(dir, f.Name()), safeName)
+		utils.UpdateLastAccess(id)
         return
     }
 
-    if statusInfo.ShouldStartProcessing {
-        utils.SetProcessingStatus(id)
-        go utils.ProcessDownload(url, format, id)
-    }
-
-    monitorDone := utils.MonitorStatusAndNotify(ws, id, statusInfo.CurrentStatusForClient, c)
-    utils.KeepWebSocketAlive(ws, id)
-    
-    <-monitorDone
-    log.Printf("Handler de Download para %s finalizado.", id)
+    c.JSON(http.StatusInternalServerError, gin.H{"error": "No file found"})
 }
 
-func isValidRequest(url, format string) bool {
-    return url != "" && (format == "mp3" || format == "mp4")
-}
-
-func generateDownloadID(url, format string) string {
-    hash := sha1.New()
-    hash.Write([]byte(url + format))
-    return hex.EncodeToString(hash.Sum(nil))
-}
-
-func handleInitialStatus(ws *websocket.Conn, id string, statusInfo utils.StatusInfo) error {
-    var msg utils.WebSocketMessage
-    
-    switch statusInfo.Status {
-    case "completed":
-        msg = utils.WebSocketMessage{
-            Status:  "completed",
-            ID:      id,
-            Message: "Conteúdo já processado e pronto. Use /result?id=" + id,
-        }
-    case "processing":
-        msg = utils.WebSocketMessage{
-            Status:  "processing",
-            ID:      id,
-            Message: "Processamento já em andamento.",
-        }
+func BuildFormatSelector(format string, quality string) string {
+    switch format {
+    case "mp3":
+        return "bestaudio[ext=mp3]/bestaudio"
+    case "mp4", "mkv", "webm":
+        height := ParseQuality(quality)
+        selector := fmt.Sprintf("bestvideo[height<=%d]+bestaudio/best", height)
+        selector += fmt.Sprintf("[ext=%s]", format)
+        return selector
     default:
-        if statusInfo.ShouldStartProcessing {
-            msg = utils.WebSocketMessage{
-                Status:  "processing",
-                ID:      id,
-                Message: "Iniciando processamento.",
-            }
+        return "best"
+    }
+}
+
+func ParseQuality(quality string) int {
+    if strings.HasSuffix(quality, "p") {
+        q := strings.TrimSuffix(quality, "p")
+        if h, err := strconv.Atoi(q); err == nil {
+            return h
         }
     }
-
-    if err := ws.WriteJSON(msg); err != nil {
-        log.Printf("Erro ao enviar status inicial para %s: %v", id, err)
-        return err
-    }
-    
-    return nil
+    return cfg.DefaultQualityYTDLP
 }

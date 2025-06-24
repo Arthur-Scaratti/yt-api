@@ -9,7 +9,8 @@
 *.test
 *.out
 /downloads/
-/unused/
+/old/*
+
 # GoLand / VSCode / IDEs
 .idea/
 .vscode/

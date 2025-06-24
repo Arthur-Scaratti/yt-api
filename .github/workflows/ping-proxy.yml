@@ -1,0 +1,34 @@
+name: Ping Go Proxy on New Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'  # Dispara apenas em tags no formato vX.Y.Z (ex.: v1.0.0)
+
+jobs:
+  ping-proxy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Necessário para pegar o histórico completo e tags
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 'stable'  # Usa a versão estável mais recente do Go
+
+      - name: Get Current Tag
+        id: get_tag
+        run: echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+        shell: bash
+
+      - name: Ping Go Proxy
+        run: |
+          MODULE_NAME=$(go list -m)
+          TAG=${{ steps.get_tag.outputs.tag }}
+          echo "Pinging proxy for module $MODULE_NAME at version $TAG"
+          curl -s "https://proxy.golang.org/$MODULE_NAME/@v/$TAG.info"
+        env:
+          GOPROXY: direct  # Garante que o proxy seja acessado diretamente
